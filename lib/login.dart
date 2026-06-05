@@ -1,4 +1,7 @@
+// lib/login.dart
+
 import 'package:flutter/material.dart';
+import 'services/api_service.dart';
 import 'user_data.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -10,10 +13,12 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -22,62 +27,56 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _loginUser() {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final String enteredEmail = _emailController.text.trim();
-    final String enteredPassword = _passwordController.text.trim();
-
-    Map<String, String>? foundUser;
-
-    for (var user in UserData.registeredUsers) {
-      if (user['email']!.toLowerCase() == enteredEmail.toLowerCase()) {
-        foundUser = user;
-        break;
-      }
-    }
-
-    if (foundUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account not found. Please sign up first.'),
-        ),
-      );
-      return;
-    }
-
-    if (foundUser['password'] != enteredPassword) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password is incorrect'),
-        ),
-      );
-      return;
-    }
-
-    UserData.name = foundUser['name']!;
-    UserData.email = foundUser['email']!;
+  void _showMessage(String message) {
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Login Successful'),
-      ),
-    );
-
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/dashboard',
-          (route) => false,
+      SnackBar(content: Text(message)),
     );
   }
 
-  void _goToSignup() {
-    Navigator.pushNamed(context, '/signup');
-  }
+  Future<void> _loginUser() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  void _goToForgotPassword() {
-    Navigator.pushNamed(context, '/forgot_password');
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final data = await ApiService.login(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (data['statusCode'] == 200 &&
+          data['token'] != null &&
+          data['user'] != null) {
+        UserData.setUserFromJson(
+          Map<String, dynamic>.from(data['user']),
+        );
+
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/dashboard',
+              (route) => false,
+        );
+      } else {
+        _showMessage(data['message'] ?? 'Login failed.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      _showMessage('Connection error. Please check your backend server.');
+    }
   }
 
   @override
@@ -86,7 +85,6 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(
         title: const Text('Login'),
       ),
-
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -124,6 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
+                    enabled: !_isLoading,
                     decoration: const InputDecoration(
                       labelText: 'Email',
                       prefixIcon: Icon(Icons.email),
@@ -133,7 +132,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         return 'Please enter email';
                       }
 
-                      if (!value.contains('@')) {
+                      final emailRegex = RegExp(
+                        r'^[\w\.-]+@[\w\.-]+\.\w+$',
+                      );
+
+                      if (!emailRegex.hasMatch(value.trim())) {
                         return 'Enter valid email';
                       }
 
@@ -146,6 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _passwordController,
                     obscureText: _obscurePassword,
+                    enabled: !_isLoading,
                     decoration: InputDecoration(
                       labelText: 'Password',
                       prefixIcon: const Icon(Icons.lock),
@@ -155,7 +159,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? Icons.visibility_off
                               : Icons.visibility,
                         ),
-                        onPressed: () {
+                        onPressed: _isLoading
+                            ? null
+                            : () {
                           setState(() {
                             _obscurePassword = !_obscurePassword;
                           });
@@ -180,20 +186,34 @@ class _LoginScreenState extends State<LoginScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _loginUser,
-                      child: const Text('Login'),
+                      onPressed: _isLoading ? null : _loginUser,
+                      child: _isLoading
+                          ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                          : const Text('Login'),
                     ),
                   ),
 
-                  const SizedBox(height: 10),
-
                   TextButton(
-                    onPressed: _goToSignup,
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                      Navigator.pushNamed(context, '/signup');
+                    },
                     child: const Text('Create Account'),
                   ),
 
                   TextButton(
-                    onPressed: _goToForgotPassword,
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                      Navigator.pushNamed(context, '/forgot_password');
+                    },
                     child: const Text('Forgot Password'),
                   ),
                 ],

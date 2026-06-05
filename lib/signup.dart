@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'services/api_service.dart';
 import 'user_data.dart';
 
 class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
+
   @override
-  _SignupScreenState createState() => _SignupScreenState();
+  State<SignupScreen> createState() => _SignupScreenState();
 }
 
 class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -15,6 +19,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -25,53 +30,32 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
-  void _createAccount() {
-    if (_formKey.currentState!.validate()) {
-      String enteredName = _nameController.text.trim();
-      String enteredEmail = _emailController.text.trim();
-      String enteredPassword = _passwordController.text.trim();
+  Future<void> _createAccount() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      bool nameExists = UserData.registeredUsers.any(
-            (user) => user['name']!.toLowerCase() == enteredName.toLowerCase(),
-      );
+    setState(() {
+      _isLoading = true;
+    });
 
-      bool emailExists = UserData.registeredUsers.any(
-            (user) => user['email']!.toLowerCase() == enteredEmail.toLowerCase(),
-      );
+    final data = await ApiService.signup(
+      name: _nameController.text.trim(),
+      email: _emailController.text.trim(),
+      password: _passwordController.text.trim(),
+    );
 
-      if (nameExists) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Username already exists'),
-          ),
-        );
-        return;
-      }
+    if (!mounted) return;
 
-      if (emailExists) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Email already exists'),
-          ),
-        );
-        return;
-      }
+    setState(() {
+      _isLoading = false;
+    });
 
-      UserData.registeredUsers.add({
-        'name': enteredName,
-        'email': enteredEmail,
-        'password': enteredPassword,
-      });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(data['message'] ?? 'Something went wrong.'),
+      ),
+    );
 
-      UserData.name = enteredName;
-      UserData.email = enteredEmail;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account Created Successfully'),
-        ),
-      );
-
+    if (data['statusCode'] == 201) {
       Navigator.pushReplacementNamed(context, '/login');
     }
   }
@@ -82,11 +66,13 @@ class _SignupScreenState extends State<SignupScreen> {
       appBar: AppBar(
         title: const Text('Create Account'),
       ),
+
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: SingleChildScrollView(
           child: Form(
             key: _formKey,
+
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -122,7 +108,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     prefixIcon: Icon(Icons.person),
                   ),
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    if (value == null || value.trim().isEmpty) {
                       return 'Please enter name';
                     }
                     return null;
@@ -133,17 +119,24 @@ class _SignupScreenState extends State<SignupScreen> {
 
                 TextFormField(
                   controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     prefixIcon: Icon(Icons.email),
                   ),
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    if (value == null || value.trim().isEmpty) {
                       return 'Please enter email';
                     }
-                    if (!value.contains('@')) {
+
+                    final emailRegex = RegExp(
+                      r'^[\w\.-]+@[\w\.-]+\.\w+$',
+                    );
+
+                    if (!emailRegex.hasMatch(value.trim())) {
                       return 'Enter valid email';
                     }
+
                     return null;
                   },
                 ),
@@ -173,9 +166,11 @@ class _SignupScreenState extends State<SignupScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter password';
                     }
+
                     if (value.length < 6) {
                       return 'Password must be at least 6 characters';
                     }
+
                     return null;
                   },
                 ),
@@ -196,7 +191,8 @@ class _SignupScreenState extends State<SignupScreen> {
                       ),
                       onPressed: () {
                         setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
+                          _obscureConfirmPassword =
+                          !_obscureConfirmPassword;
                         });
                       },
                     ),
@@ -205,9 +201,11 @@ class _SignupScreenState extends State<SignupScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please confirm password';
                     }
+
                     if (value != _passwordController.text) {
                       return 'Passwords do not match';
                     }
+
                     return null;
                   },
                 ),
@@ -217,16 +215,24 @@ class _SignupScreenState extends State<SignupScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _createAccount,
-                    child: const Text('Create Account'),
+                    onPressed: _isLoading ? null : _createAccount,
+                    child: _isLoading
+                        ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
+                    )
+                        : const Text('Create Account'),
                   ),
                 ),
 
-                const SizedBox(height: 10),
-
                 TextButton(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/login');
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                    Navigator.pushReplacementNamed(context, '/login');
                   },
                   child: const Text('Back to Login'),
                 ),
